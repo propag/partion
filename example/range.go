@@ -1,25 +1,25 @@
 package main
 
 import (
-	"net/http"
-	"net/url"
+	"flag"
+	"fmt"
 	"github.com/propag/pariton"
 	"log"
-	"fmt"
-	"flag"
-	"time"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
-	"strings"
+	"time"
 )
 
 import (
 	"errors"
-	"regexp"
 	"io/ioutil"
 	"path"
+	"regexp"
 )
 
 var out string
@@ -72,11 +72,11 @@ const REALWIDE = CWIDE - 1
 type MyRequestTripper struct {
 	*partion.RequestTripper206N
 
-	st time.Time
-	line [REALWIDE]byte
+	st    time.Time
+	line  [REALWIDE]byte
 	nsets int32
 
-	amt int64
+	amt                int64
 	amtsec, amtseclast int64
 
 	validN int32
@@ -91,7 +91,7 @@ func (o *MyRequestTripper) Set(offset int64, bar partion.Bar) {
 
 	i := offset * int64(len(o.line)) / o.ContentLength
 	j := bar.X * int64(len(o.line)) / o.ContentLength
-	
+
 	var inc int32
 	for ; i <= j; i++ {
 		if o.line[i] != '|' {
@@ -132,7 +132,7 @@ func (o *MyRequestTripper) Update() {
 
 	urlStr := urlStr
 	if len(urlStr) > REALWIDE {
-		urlStr = urlStr[:len(urlStr) - 3]
+		urlStr = urlStr[:len(urlStr)-3]
 		urlStr += "..."
 	}
 
@@ -150,12 +150,12 @@ func (o *MyRequestTripper) Update() {
 	if o.ContentLength == -1 {
 		fmt.Println("Whole:", "N/A")
 		fmt.Println("Completion:", "N/A",
-			"(" + strconv.FormatInt(o.amt, 10) + " bytes)")
+			"("+strconv.FormatInt(o.amt, 10)+" bytes)")
 	} else {
 		completion := int(o.nsets) * 100 / len(o.line)
 		fmt.Println("Whole:", o.ContentLength, "bytes")
-		fmt.Println("Completion:", strconv.Itoa(completion) + "%",
-			"(" + strconv.FormatInt(o.amt, 10) + " bytes)")
+		fmt.Println("Completion:", strconv.Itoa(completion)+"%",
+			"("+strconv.FormatInt(o.amt, 10)+" bytes)")
 	}
 
 	if o.amtseclast == 0 {
@@ -211,19 +211,19 @@ func (o *MyRequestTripper) Incoming(buf []byte, offset int64, bar partion.Bar) {
 // }
 
 type Ticker struct {
-	C <-chan Time
+	C       <-chan Time
 	stopsig chan bool
-	ticker *time.Ticker
+	ticker  *time.Ticker
 }
 
 func NewTicker(d time.Duration) *Ticker {
 	ticker := &Ticker{
-		C: make(chan time.Time, 1),
-		stopsig: make(chan bool, 1)
-		ticker: time.NewTicker(d),
+		C:       make(chan time.Time, 1),
+		stopsig: make(chan bool, 1),
+		ticker:  time.NewTicker(d),
 	}
 	ticker.C <- time.Now()
-	
+
 	go func() {
 		var curr time.Time
 		var C chan time.Time
@@ -235,11 +235,8 @@ func NewTicker(d time.Duration) *Ticker {
 					C = ticker.C
 					curr = now
 				}
-
-			case C <- curr {
+			case C <- curr:
 				C = nil
-			}
-
 			case <-stopsig:
 				ticker.ticker.Stop()
 				return
@@ -299,7 +296,6 @@ func main() {
 	reactor := partion.NewReactor()
 	reactor.NewRequestTripper(tri)
 	reactor.NewPracticer(reactor.NewPackagePracticer())
-
 
 	ticker := NewTicker(time.Second)
 

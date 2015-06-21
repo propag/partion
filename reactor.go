@@ -368,7 +368,7 @@ func (o *RequestTripper206N) Adjust(resp *http.Response) (Bar, error) {
 		return Bar{}, err
 	}
 
-	return NewBar(x, y + 1), nil
+	return NewBar(x, y+1), nil
 }
 
 func (o *RequestTripper206N) Raise(bar Bar, err error) error {
@@ -427,7 +427,7 @@ func (assign *assignment) Read(buf []byte) (int, error) {
 		return 0, io.EOF
 	}
 	greatest := min64(
-		assign.Y - assign.offset,
+		assign.Y-assign.offset,
 		int64(len(buf)),
 	)
 	n, err := assign.src.Read(buf[:greatest])
@@ -519,7 +519,7 @@ func (reactor *SuperReactor) Begin(bar Bar) error {
 	}
 	reactor.assigns = append(reactor.assigns, assign)
 
-	// really assigns need to be sorted? 
+	// really assigns need to be sorted?
 	sort.Sort(reactor.assigns)
 
 	reactor.wg.Add(1)
@@ -573,7 +573,7 @@ func (reactor *SuperReactor) open(assign *assignment) error {
 
 	case err := <-errc:
 		resp := <-respc
-		
+
 		if err != nil {
 			if err := reactor.Raise(assign.Bar, err); err != nil {
 				reactor.raise(err)
@@ -591,7 +591,7 @@ func (reactor *SuperReactor) open(assign *assignment) error {
 
 		assign.resp = resp
 		assign.src = resp.Body
-	
+
 		if supportPartial {
 			bar, err := reactor.Adjust(resp)
 			if err != nil {
@@ -718,7 +718,7 @@ func NewReactor() Reactor {
 // 		log.Fatal(err)
 // 	}
 
-// 	return w	
+// 	return w
 // }
 
 // func test1(path string) {
@@ -735,7 +735,7 @@ func NewReactor() Reactor {
 // 	done := timer("test1")
 // 	err = reactor.Wait()
 // 	done()
-	
+
 // 	fmt.Println(err)
 // 	w.Close()
 
