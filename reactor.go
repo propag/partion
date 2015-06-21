@@ -11,14 +11,6 @@ import (
 	"sync"
 )
 
-// import (
-// 	"fmt"
-// 	"log"
-// 	"os"
-// 	"time"
-// 	"bytes"
-// )
-
 const END = -1
 
 // Bar represents a whole or partial progress bar.
@@ -287,8 +279,6 @@ func PartitionZ(bar Bar, n int) []Bar {
 }
 
 func (o *RequestTripper206N) Ready(resp *http.Response, bar Bar) {
-	fmt.Println("Ready!", bar.Len())
-
 	bars := PartitionZ(bar, o.N)
 
 	for _, bar := range bars[1:] {
@@ -635,7 +625,7 @@ func (reactor *SuperReactor) streaming(assign *assignment) {
 			return
 
 		case err := <-errc:
-			buf, offset, bar := <-bufc, <-offsetc, <-bar
+			buf, offset, bar := <-bufc, <-offsetc, <-barc
 			if len(buf) > 0 {
 				reactor.Incoming(buf, offset, bar)
 			}
@@ -700,102 +690,3 @@ func NewReactor() Reactor {
 		errc: make(chan error, 1),
 	}
 }
-
-// sep
-
-// func timer(name string) func() {
-// 	now := time.Now()
-// 	done := func() {
-// 		fmt.Println(name, "Done.:", time.Since(now))
-// 	}
-
-// 	return done
-// }
-
-// func openloc(path string) *os.File {
-// 	w, err := os.Create(path)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-
-// 	return w
-// }
-
-// func test1(path string) {
-// 	w := openloc(path)
-// 	tri, err := New206(url, w, 2)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-
-// 	reactor := NewReactor()
-// 	reactor.SetRequestTripper(tri)
-// 	reactor.SetPracticer(NewPackagePracticer())
-
-// 	done := timer("test1")
-// 	err = reactor.Wait()
-// 	done()
-
-// 	fmt.Println(err)
-// 	w.Close()
-
-// }
-
-// func test2(path string) {
-// 	w := openloc(path)
-// 	done := timer("test2")
-// 	resp, err := http.Get(url)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-
-// 	_, err = io.Copy(w, resp.Body)
-// 	done()
-
-// 	fmt.Println(err)
-// 	w.Close()
-// }
-
-// func equal(path1, path2 string) bool {
-// 	st1, _ := os.Stat(path1)
-// 	st2, _ := os.Stat(path2)
-// 	if st1.Size() != st2.Size() {
-// 		return false
-// 	}
-
-// 	r1, _ := os.Open(path1)
-// 	r2, _ := os.Open(path2)
-
-// 	buf1 := make([]byte, 4096)
-// 	buf2 := make([]byte, 4096)
-
-// 	for {
-// 		_, err := r1.Read(buf1)
-// 		r2.Read(buf2)
-// 		if err != nil {
-// 			return true
-// 		}
-
-// 		if !bytes.Equal(buf1, buf2) {
-// 			return false
-// 		}
-// 	}
-// }
-
-// const url = "https://storage.googleapis.com/golang/go1.4.2.src.tar.gz"
-
-// func main() {
-// 	path1 := "go1.4.2.src.tar (1).gz"
-// 	path2 := "go1.4.2.src.tar (2).gz"
-// 	test1(path1)
-// 	test2(path2)
-
-// 	if !equal(path1, path2) {
-// 		fmt.Println("not equal")
-// 	} else {
-// 		fmt.Println("equal!")
-// 	}
-
-// 	os.Remove(path1)
-// 	os.Remove(path2)
-// }
