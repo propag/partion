@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/propag/pariton"
+	"github.com/propag/partion"
 	"log"
 	"net/http"
 	"net/url"
@@ -13,9 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-)
-
-import (
+	"strconv"
 	"errors"
 	"io/ioutil"
 	"path"
@@ -29,9 +27,9 @@ var urlStr string
 var N int
 
 func init() {
-	flag.StringVar(&name, "o", "", "out file")
+	flag.StringVar(&out, "o", "", "out file")
 	flag.StringVar(&urlStr, "url", "", "url to fetch")
-	flag.IntVar(&N, "n", "the number of partitions")
+	flag.IntVar(&N, "n", 2, "the number of partitions")
 }
 
 // NewestRelease takes newest go source to you
@@ -81,7 +79,7 @@ type MyRequestTripper struct {
 
 	validN int32
 
-	uMu, incomingMu sync.Lock
+	uMu, incomingMu sync.Mutex
 }
 
 func (o *MyRequestTripper) Set(offset int64, bar partion.Bar) {
@@ -136,7 +134,7 @@ func (o *MyRequestTripper) Update() {
 		urlStr += "..."
 	}
 
-	sep := strings.Repeat("/", c)
+	sep := strings.Repeat("/", REALWIDE)
 	var lineStr string
 	for _, u := range o.line {
 		lineStr += string(u)
@@ -183,8 +181,8 @@ func (o *MyRequestTripper) Incoming(buf []byte, offset int64, bar partion.Bar) {
 	o.incomingMu.Lock()
 	o.Set(offset, bar)
 
-	o.amt += len(buf)
-	o.amtsec += len(buf)
+	o.amt += int64(len(buf))
+	o.amtsec += int64(len(buf))
 	o.incomingMu.Unlock()
 }
 
@@ -211,18 +209,19 @@ func (o *MyRequestTripper) Incoming(buf []byte, offset int64, bar partion.Bar) {
 // }
 
 type Ticker struct {
-	C       <-chan Time
+	C       <-chan time.Time
 	stopsig chan bool
 	ticker  *time.Ticker
 }
 
 func NewTicker(d time.Duration) *Ticker {
+	timec, stopsig := make(chan time.Time, 1), make(chan bool, 1)
 	ticker := &Ticker{
-		C:       make(chan time.Time, 1),
-		stopsig: make(chan bool, 1),
+		C:       timec,
+		stopsig: stopsig,
 		ticker:  time.NewTicker(d),
 	}
-	ticker.C <- time.Now()
+	timec <- time.Now()
 
 	go func() {
 		var curr time.Time
@@ -232,7 +231,7 @@ func NewTicker(d time.Duration) *Ticker {
 			select {
 			case now := <-ticker.ticker.C:
 				if C == nil {
-					C = ticker.C
+					C = timec
 					curr = now
 				}
 			case C <- curr:
@@ -252,7 +251,7 @@ func (ticker *Ticker) Stop() {
 }
 
 func main() {
-	flags.Parse()
+	flag.Parse()
 
 	if len(os.Args) == 1 {
 		fmt.Println("Fetch newest go source...")
@@ -273,7 +272,7 @@ func main() {
 
 		N = 2
 	} else {
-		if len(url) == 0 || len(out) == 0 {
+		if len(urlStr) == 0 || len(out) == 0 {
 			fmt.Println(os.Args[0], "-o=[out]", "-url=[url]", "-n=[n]")
 			return
 		}
@@ -285,8 +284,13 @@ func main() {
 	}
 	defer w.Close()
 
+	tri206, err := partion.New206(urlStr, w, N)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	tri := &MyRequestTripper{
-		RequestTripper206N: partion.New206(urlStr, w, N),
+		RequestTripper206N: tri206,
 	}
 
 	for i := 0; i < len(tri.line); i++ {
@@ -294,8 +298,8 @@ func main() {
 	}
 
 	reactor := partion.NewReactor()
-	reactor.NewRequestTripper(tri)
-	reactor.NewPracticer(reactor.NewPackagePracticer())
+	reactor.SetRequestTripper(tri)
+	reactor.SetPracticer(partion.NewPackagePracticer())
 
 	ticker := NewTicker(time.Second)
 
