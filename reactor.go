@@ -1,4 +1,4 @@
-package main
+package partion
 
 import (
 	"errors"
@@ -11,11 +11,13 @@ import (
 	"sync"
 )
 
-import (
-	"fmt"
-	"log"
-	"os"
-)
+// import (
+// 	"fmt"
+// 	"log"
+// 	"os"
+// 	"time"
+// 	"bytes"
+// )
 
 const END = -1
 
@@ -108,6 +110,16 @@ type PackagePracticer struct {
 	*http.Client
 }
 
+func NewPackagePracticer() *PackagePracticer {
+	tr := new(http.Transport)
+	return &PackagePracticer{
+		tr,
+		&http.Client{
+			Transport: tr,
+		},
+	}
+}
+
 type RequestTripper206N struct {
 	// Request
 	// Only GET is allowed to request
@@ -155,7 +167,7 @@ func (o *RequestTripper206N) NewRequest() (*http.Request, error) {
 	return req, nil
 }
 
-func (o *RequestTripper206N) Bounded(req *http.Request, bar Bar) error {
+func HTTPBounded(req *http.Request, bar Bar) error {
 	if bar.X == 0 && bar.Y == END {
 		return nil
 	}
@@ -172,6 +184,10 @@ func (o *RequestTripper206N) Bounded(req *http.Request, bar Bar) error {
 	return nil
 }
 
+func (o *RequestTripper206N) Bounded(req *http.Request, bar Bar) error {
+	return HTTPBounded(req, bar)
+}
+
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.4.17
 // 10.4.17 416 Requested Range Not Satisfiable
 // A server SHOULD return a response with this status code if a
@@ -179,7 +195,8 @@ func (o *RequestTripper206N) Bounded(req *http.Request, bar Bar) error {
 // none of the range-specifier values in this field overlap the
 // current extent of the selected resource, and the request did not
 // include an If-Range request-header field.
-func (o *RequestTripper206N) Partiable(resp *http.Response) bool {
+
+func HTTPPartiable(resp *http.Response) bool {
 	// http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.5
 	if _, in := resp.Header["Accept-Ranges"]; in {
 		// http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.12
@@ -195,6 +212,10 @@ func (o *RequestTripper206N) Partiable(resp *http.Response) bool {
 	}
 
 	return true
+}
+
+func (o *RequestTripper206N) Partiable(resp *http.Response) bool {
+	return HTTPPartiable(resp)
 }
 
 func ParseContentRangeHeader(val string) (unit string, x int64, y int64, leng int64, err error) {
@@ -390,12 +411,12 @@ func min64(x, y int64) int64 {
 	return x
 }
 
-func max64(x, y int64) int64 {
-	if x > y {
-		return x
-	}
-	return y
-}
+// func max64(x, y int64) int64 {
+// 	if x > y {
+// 		return x
+// 	}
+// 	return y
+// }
 
 func (assign *assignment) Read(buf []byte) (int, error) {
 	if assign.Y == END {
@@ -498,7 +519,7 @@ func (reactor *SuperReactor) Begin(bar Bar) error {
 	}
 	reactor.assigns = append(reactor.assigns, assign)
 
-	// 반드시 정렬할 필요가 있을까
+	// really assigns need to be sorted? 
 	sort.Sort(reactor.assigns)
 
 	reactor.wg.Add(1)
@@ -679,30 +700,101 @@ func NewReactor() Reactor {
 	}
 }
 
-func main() {
-	w, err := os.Create("uses.txt")
-	if err != nil {
-		log.Fatal(err)
-	}
+// sep
 
-	// https://www.python.org/ftp/python/3.4.3/python-3.4.3.msi
-	tri, err := New206("http://218.48.8.35/uses.txt", w, 4)
-	if err != nil {
-		log.Fatal(err)
-	}
+// func timer(name string) func() {
+// 	now := time.Now()
+// 	done := func() {
+// 		fmt.Println(name, "Done.:", time.Since(now))
+// 	}
 
-	tr := new(http.Transport)
-	pra := &PackagePracticer{
-		tr,
-		&http.Client{
-			Transport: tr,
-		},
-	}
+// 	return done
+// }
 
-	reactor := NewReactor()
-	reactor.SetRequestTripper(tri)
-	reactor.SetPracticer(pra)
-	err = reactor.Wait()
-	fmt.Println(err)
-	w.Close()
-}
+// func openloc(path string) *os.File {
+// 	w, err := os.Create(path)
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+
+// 	return w	
+// }
+
+// func test1(path string) {
+// 	w := openloc(path)
+// 	tri, err := New206(url, w, 2)
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+
+// 	reactor := NewReactor()
+// 	reactor.SetRequestTripper(tri)
+// 	reactor.SetPracticer(NewPackagePracticer())
+
+// 	done := timer("test1")
+// 	err = reactor.Wait()
+// 	done()
+	
+// 	fmt.Println(err)
+// 	w.Close()
+
+// }
+
+// func test2(path string) {
+// 	w := openloc(path)
+// 	done := timer("test2")
+// 	resp, err := http.Get(url)
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+
+// 	_, err = io.Copy(w, resp.Body)
+// 	done()
+
+// 	fmt.Println(err)
+// 	w.Close()
+// }
+
+// func equal(path1, path2 string) bool {
+// 	st1, _ := os.Stat(path1)
+// 	st2, _ := os.Stat(path2)
+// 	if st1.Size() != st2.Size() {
+// 		return false
+// 	}
+
+// 	r1, _ := os.Open(path1)
+// 	r2, _ := os.Open(path2)
+
+// 	buf1 := make([]byte, 4096)
+// 	buf2 := make([]byte, 4096)
+
+// 	for {
+// 		_, err := r1.Read(buf1)
+// 		r2.Read(buf2)
+// 		if err != nil {
+// 			return true
+// 		}
+
+// 		if !bytes.Equal(buf1, buf2) {
+// 			return false
+// 		}
+// 	}
+// }
+
+// const url = "https://storage.googleapis.com/golang/go1.4.2.src.tar.gz"
+
+// func main() {
+// 	path1 := "go1.4.2.src.tar (1).gz"
+// 	path2 := "go1.4.2.src.tar (2).gz"
+// 	test1(path1)
+// 	test2(path2)
+
+// 	if !equal(path1, path2) {
+// 		fmt.Println("not equal")
+// 	} else {
+// 		fmt.Println("equal!")
+// 	}
+
+// 	os.Remove(path1)
+// 	os.Remove(path2)
+// }
