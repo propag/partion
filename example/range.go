@@ -7,7 +7,12 @@ import (
 	"log"
 	"fmt"
 	"flag"
+	"time"
 	"os"
+	"os/exec"
+	"sync"
+	"sync/atomic"
+	"strings"
 )
 
 import (
@@ -60,129 +65,193 @@ func NewestRelease() (string, error) {
 
 //	go1.4.2.src.tar.gz
 
-const CWide = 80
+const CWIDE = 80
+
+const REALWIDE = CWIDE - 1
 
 type MyRequestTripper struct {
 	*partion.RequestTripper206N
 
-	urlStr string
-	line [CWide - 1]byte
-	nsets int
+	st time.Time
+	line [REALWIDE]byte
+	nsets int32
 
-	accumulated int64
+	amt int64
+	amtsec, amtseclast int64
+
+	validN int32
+
+	uMu, incomingMu sync.Lock
 }
 
-type Screen struct {
-	url  string
-	line [Wide - 1]byte
-	nset int
-	reqs int
-	errs []*Err
-
-	perbytes int64
-
-	newbytes int64
-
-	bytes int64
-
-	timer time.Duration
-
-	persec int64
-}
-
-func NewScreen() *Screen {
-	screen := new(Screen)
-	for i := 0; i < Wide-1; i++ {
-		screen.line[i] = ' '
+func (o *MyRequestTripper) Set(offset int64, bar partion.Bar) {
+	if o.ContentLength <= 0 {
+		return
 	}
-	return screen
-}
 
-func (screen *Screen) Set(val int) {
-	if 0 <= val && val <= 100 {
-		i := val * (Wide - 2) / 100
-		if screen.line[i] == ' ' {
-			screen.line[i] = '|'
-			screen.nset += 1
-			screen.Update()
+	i := offset * int64(len(o.line)) / o.ContentLength
+	j := bar.X * int64(len(o.line)) / o.ContentLength
+	
+	var inc int32
+	for ; i <= j; i++ {
+		if o.line[i] != '|' {
+			o.line[i] = '|'
+			inc++
 		}
 	}
+
+	if inc > 0 {
+		atomic.AddInt32(&o.nsets, inc)
+		// o.Update()
+	}
 }
 
-func (screen *Screen) Update() {
-	sep := strings.Repeat("/", Wide-1)
+// https://abcdefghijklmnopqrstuvwxyz.abcdefghijklmnopqrstuvwxyz/abcdefghijklmno...
+// ////////////////////////////////////////////////////////////////////////////////
+// ||||||||               ||||||||             ||||||||              ||||||||||||||
+// ////////////////////////////////////////////////////////////////////////////////
+// Whole: 1209323323 bytes
+// Completion: 64% (28420232 bytes)
+// Speed: 203212 bytes/sec
+// Partitions: 4
+// Time: 34s
+// ...
+// Done
+//
+// ...
+// (error message)
 
-	var prog string
-	for _, r := range screen.line {
-		prog += string(r)
+func Clear() error {
+	cmd := exec.Command("cmd", "/c", "cls")
+	cmd.Stdout = os.Stdout
+	return cmd.Run()
+}
+
+func (o *MyRequestTripper) Update() {
+	o.uMu.Lock()
+
+	urlStr := urlStr
+	if len(urlStr) > REALWIDE {
+		urlStr = urlStr[:len(urlStr) - 3]
+		urlStr += "..."
 	}
 
-	url := screen.url
-	if len(url) > Wide-1 {
-		url = url[:Wide-1]
+	sep := strings.Repeat("/", c)
+	var lineStr string
+	for _, u := range o.line {
+		lineStr += string(u)
 	}
 
 	Clear()
-	fmt.Println(url)
-	fmt.Println(
-		screen.Percent(),
-		",",
-		screen.reqs,
-		screen.newbytes,
-		"/",
-		screen.Bytes(),
-		screen.Timer(),
-		screen.PerSec(),
-	)
+	fmt.Println(urlStr)
 	fmt.Println(sep)
-	fmt.Println(prog)
+	fmt.Println(lineStr)
 	fmt.Println(sep)
-
-	for i, err := range screen.errs {
-		fmt.Println(i+1, ".", err.err)
+	if o.ContentLength == -1 {
+		fmt.Println("Whole:", "N/A")
+		fmt.Println("Completion:", "N/A",
+			"(" + strconv.FormatInt(o.amt, 10) + " bytes)")
+	} else {
+		completion := int(o.nsets) * 100 / len(o.line)
+		fmt.Println("Whole:", o.ContentLength, "bytes")
+		fmt.Println("Completion:", strconv.Itoa(completion) + "%",
+			"(" + strconv.FormatInt(o.amt, 10) + " bytes)")
 	}
+
+	if o.amtseclast == 0 {
+		fmt.Println("Speed:", o.amtsec, "bytes/sec")
+	} else {
+		fmt.Println("Speed:", o.amtseclast, "bytes/sec")
+	}
+	fmt.Println("Partitions:", o.validN)
+	fmt.Println("Time:", time.Since(o.st))
+
+	o.uMu.Unlock()
 }
 
-func (screen *Screen) Bytes() string {
-	if screen.bytes < 0 {
-		return "N/A"
+func (o *MyRequestTripper) Adjust(resp *http.Response) (partion.Bar, error) {
+	bar, err := o.RequestTripper206N.Adjust(resp)
+	if err == nil {
+		atomic.AddInt32(&o.validN, 1)
 	}
 
-	return strconv.FormatInt(screen.bytes, 10)
+	return bar, err
 }
 
-func (screen *Screen) Timer() string {
-	if screen.timer > 0 {
-		return screen.timer.String()
-	}
+func (o *MyRequestTripper) Incoming(buf []byte, offset int64, bar partion.Bar) {
+	o.RequestTripper206N.Incoming(buf, offset, bar)
+	o.incomingMu.Lock()
+	o.Set(offset, bar)
 
-	return "N/A"
+	o.amt += len(buf)
+	o.amtsec += len(buf)
+	o.incomingMu.Unlock()
 }
 
-func (screen *Screen) Percent() int {
-	return screen.nset * 100 / (Wide - 1)
+// func (screen *Screen) PerSec() string {
+// 	n := screen.persec
+// 	u := "b"
+
+// 	if n >= 1024 {
+// 		n /= 1024
+// 		u = "kb"
+// 	}
+
+// 	if n >= 1024 {
+// 		n /= 1024
+// 		u = "mb"
+// 	}
+
+// 	if n >= 1024 {
+// 		n /= 1024
+// 		u = "gb"
+// 	}
+
+// 	return strconv.FormatInt(n, 10) + u + "/sec"
+// }
+
+type Ticker struct {
+	C <-chan Time
+	stopsig chan bool
+	ticker *time.Ticker
 }
 
-func (screen *Screen) PerSec() string {
-	n := screen.persec
-	u := "b"
-
-	if n >= 1024 {
-		n /= 1024
-		u = "kb"
+func NewTicker(d time.Duration) *Ticker {
+	ticker := &Ticker{
+		C: make(chan time.Time, 1),
+		stopsig: make(chan bool, 1)
+		ticker: time.NewTicker(d),
 	}
+	ticker.C <- time.Now()
+	
+	go func() {
+		var curr time.Time
+		var C chan time.Time
 
-	if n >= 1024 {
-		n /= 1024
-		u = "mb"
-	}
+		for {
+			select {
+			case now := <-ticker.ticker.C:
+				if C == nil {
+					C = ticker.C
+					curr = now
+				}
 
-	if n >= 1024 {
-		n /= 1024
-		u = "gb"
-	}
+			case C <- curr {
+				C = nil
+			}
 
-	return strconv.FormatInt(n, 10) + u + "/sec"
+			case <-stopsig:
+				ticker.ticker.Stop()
+				return
+			}
+		}
+	}()
+
+	return ticker
+}
+
+func (ticker *Ticker) Stop() {
+	ticker.stopsig <- true
 }
 
 func main() {
@@ -217,12 +286,47 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer w.Close()
 
-	tripper := &MyRequestTripper{
+	tri := &MyRequestTripper{
 		RequestTripper206N: partion.New206(urlStr, w, N),
 	}
 
+	for i := 0; i < len(tri.line); i++ {
+		tri.line[i] = ' '
+	}
+
 	reactor := partion.NewReactor()
-	reactor.NewRequestTripper(partion.New206(urlStr))
+	reactor.NewRequestTripper(tri)
 	reactor.NewPracticer(reactor.NewPackagePracticer())
+
+
+	ticker := NewTicker(time.Second)
+
+	errc := make(chan error)
+	tri.st = time.Now()
+	go func() {
+		errc <- reactor.Wait()
+	}()
+
+	for {
+		select {
+		case err := <-errc:
+			tri.Update()
+			fmt.Println()
+			fmt.Println("...")
+			if err == nil {
+				fmt.Println("Done")
+			} else {
+				fmt.Println(err)
+			}
+			return
+		case <-ticker.C:
+			tri.incomingMu.Lock()
+			tri.amtseclast = tri.amtsec
+			tri.amtsec = 0
+			tri.Update()
+			tri.incomingMu.Unlock()
+		}
+	}
 }

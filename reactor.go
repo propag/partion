@@ -89,7 +89,7 @@ type RequestTripper interface {
 	Raise(missed Bar, err error) error
 
 	// Incoming handles sincoming data from the server.
-	Incoming(data []byte, offset int64)
+	Incoming(data []byte, offset int64, bar Bar)
 }
 
 type Reactor interface {
@@ -375,7 +375,7 @@ func (o *RequestTripper206N) Raise(bar Bar, err error) error {
 	return err
 }
 
-func (o *RequestTripper206N) Incoming(data []byte, offset int64) {
+func (o *RequestTripper206N) Incoming(data []byte, offset int64, bar Bar) {
 	o.Writer.WriteAt(data, offset)
 }
 
@@ -607,7 +607,7 @@ func (reactor *SuperReactor) open(assign *assignment) error {
 
 func (reactor *SuperReactor) streaming(assign *assignment) {
 	bufc, errc := make(chan []byte, 1), make(chan error, 1)
-	offsetc := make(chan int64, 1)
+	offsetc, barc := make(chan int64, 1), make(chan Bar, 1)
 
 	go func() {
 		for {
@@ -615,6 +615,7 @@ func (reactor *SuperReactor) streaming(assign *assignment) {
 			runtime.Gosched()
 			assign.Lock()
 			offsetc <- assign.offset
+			barc <- assign.Bar
 			n, err := assign.Read(buf[:])
 			assign.Unlock()
 
@@ -634,9 +635,9 @@ func (reactor *SuperReactor) streaming(assign *assignment) {
 			return
 
 		case err := <-errc:
-			buf, offset := <-bufc, <-offsetc
+			buf, offset, bar := <-bufc, <-offsetc, <-bar
 			if len(buf) > 0 {
-				reactor.Incoming(buf, offset)
+				reactor.Incoming(buf, offset, bar)
 			}
 			if err != nil {
 				reactor.CancelRequest(assign.resp.Request)
