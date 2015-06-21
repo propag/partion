@@ -87,8 +87,10 @@ func (o *MyRequestTripper) Set(offset int64, bar partion.Bar) {
 		return
 	}
 
-	i := offset * int64(len(o.line)) / o.ContentLength
-	j := bar.X * int64(len(o.line)) / o.ContentLength
+	i := bar.X * int64(len(o.line)) / o.ContentLength
+	j := offset * int64(len(o.line)) / o.ContentLength
+	// fmt.Println(bar.X, len(o.line))
+	// fmt.Println(i, j)
 
 	var inc int32
 	for ; i <= j; i++ {

@@ -234,7 +234,7 @@ func ParseContentRangeHeader(val string) (unit string, x int64, y int64, leng in
 		goto Invalid
 	}
 
-	x, err = strconv.ParseInt(seps[1][:i][j:], 10, 64)
+	x, err = strconv.ParseInt(seps[1][:i][:j], 10, 64)
 	if err != nil {
 		goto Invalid
 	}
@@ -282,19 +282,13 @@ func (o *RequestTripper206N) Ready(resp *http.Response, bar Bar) {
 	bars := PartitionZ(bar, o.N)
 
 	for _, bar := range bars[1:] {
-		// fmt.Println("bar.X", bar.X)
 		if err := o.Begin(NewBar(
 			bar.X,
 			END,
 		)); err != nil {
-			// fmt.Println("Begin error:", err)
+			return
 		}
 	}
-
-	// super := o.Runner.(*SuperReactor)
-	// for i, assign := range super.assigns {
-	// 	fmt.Println(i, assign.Bar.X, assign.Bar.Y, assign.offset)
-	// }
 }
 
 func (o *RequestTripper206N) SetContentLength(leng int64) error {
@@ -446,7 +440,6 @@ type SuperReactor struct {
 	canBegin       bool
 	supportPartial bool
 
-	// capacity 1
 	errc chan error
 
 	wg      sync.WaitGroup
@@ -541,6 +534,13 @@ func (reactor *SuperReactor) raise(err error) {
 	}
 }
 
+func (reactor *SuperReactor) reraise(bar Bar, err error) error {
+	if err = reactor.Raise(bar, err); err != nil {
+		reactor.raise(err)
+	}
+	return err
+}
+
 func (reactor *SuperReactor) open(assign *assignment) error {
 	req, err := reactor.NewRequest()
 	if err != nil {
@@ -565,8 +565,7 @@ func (reactor *SuperReactor) open(assign *assignment) error {
 		resp := <-respc
 
 		if err != nil {
-			if err := reactor.Raise(assign.Bar, err); err != nil {
-				reactor.raise(err)
+			if err := reactor.reraise(assign.Bar, err); err != nil {
 				return err
 			}
 		}
@@ -632,15 +631,22 @@ func (reactor *SuperReactor) streaming(assign *assignment) {
 			if err != nil {
 				reactor.CancelRequest(assign.resp.Request)
 				if err != io.EOF {
-					if err := reactor.Raise(
+					reactor.reraise(
 						NewBar(
 							assign.offset,
 							assign.Y,
 						),
 						err,
-					); err != nil {
-						reactor.raise(err)
-					}
+					)
+				}
+				if err := assign.resp.Body.Close(); err != nil {
+					reactor.reraise(
+						NewBar(
+							assign.offset,
+							assign.Y,
+						),
+						err,
+					)
 				}
 				return
 			}
