@@ -255,7 +255,8 @@ func main() {
 
 	if len(os.Args) == 1 {
 		fmt.Println("Fetch newest go source...")
-		urlStr, err := NewestRelease()
+		var err error
+		urlStr, err = NewestRelease()
 		if err != nil {
 			log.Fatal(err)
 		}
