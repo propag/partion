@@ -72,7 +72,7 @@ type RequestTripper interface {
 	Partiable(*http.Response) bool
 
 	// Adjust adjust the requested bar.
-	Adjust(*http.Response) (Bar, error)
+	Adjust(*http.Response, Bar) (Bar, error)
 
 	// Raise make a decision that the error raises to cancel all
 	// requests being processed. if error occurs but you do not throw
@@ -304,7 +304,7 @@ func (o *RequestTripper206N) SetContentLength(leng int64) error {
 	return nil
 }
 
-func (o *RequestTripper206N) Adjust(resp *http.Response) (Bar, error) {
+func (o *RequestTripper206N) Adjust(resp *http.Response, bar Bar) (Bar, error) {
 	// http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.4.
 	// 17 A server SHOULD return a response with this status code if a
 	// request included a Range request-header field (section 14.35),
@@ -582,7 +582,7 @@ func (reactor *SuperReactor) open(assign *assignment) error {
 		assign.src = resp.Body
 
 		if supportPartial {
-			bar, err := reactor.Adjust(resp)
+			bar, err := reactor.Adjust(resp, assign.Bar)
 			if err != nil {
 				reactor.raise(err)
 				return err

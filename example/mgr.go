@@ -167,8 +167,8 @@ func (o *MyRequestTripper) Update() {
 	o.uMu.Unlock()
 }
 
-func (o *MyRequestTripper) Adjust(resp *http.Response) (partion.Bar, error) {
-	bar, err := o.RequestTripper206N.Adjust(resp)
+func (o *MyRequestTripper) Adjust(resp *http.Response, bar Bar) (partion.Bar, error) {
+	bar, err := o.RequestTripper206N.Adjust(resp, bar)
 	if err == nil {
 		atomic.AddInt32(&o.validN, 1)
 	}
